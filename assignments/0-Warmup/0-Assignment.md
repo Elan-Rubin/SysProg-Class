@@ -35,7 +35,12 @@ Please provide answers to these questions using markdown notation and place them
 
 
 3. Please provide a link to the repository you are using for this class.
+https://github.com/Elan-Rubin/SysProg-Class
 
 4. Briefly describe what you want to get out of this class.
+I would like learn about system programming, and (obviously) I hope to recieve credit from the course.
+Even though I've practiced C programming in other classes, I hope that I can improve my abilities in those areas, as I learn how systems operate.
 
 5. Briefly describe any concerns you might be having with being successful in this class (if any).
+I am currently trying to improve my time management and discipline skills. This has been a major effort in college so far.
+I am very confident in my personal and technical abilities, so the hope is that my efforts will pay off, and I'll recieve a 'good' grade in the course.
