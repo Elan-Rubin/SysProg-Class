@@ -15,51 +15,43 @@ int count_words(char *, int, int);
 int print_words(char *, int, int);
 int reverse_str(char *, int, int);
 
-int setup_buff(char *buff, char *user_str, int len)
-{
+int setup_buff(char *buff, char *user_str, int len) {
     // TODO: #4:  Implement the setup buff as per the directions
-
     char *src = user_str;
     char *dst = buff;
     int count = 0;
-    int space_flag = 0;
+    int real_len = 0;
+    int check_space = 0;
 
-    while (*src != '\0')
-    {
-        if (count >= len)
-        {
+    while (*src != '\0') {
+        if (count >= len) {
             return -1;
         }
-        if (*src == ' ')
-        {
-            if (!space_flag && count > 0)
-            {
+        if (*src == ' ' || *src == '\t') {
+            if (!check_space && count > 0) {
                 *dst = ' ';
                 dst++;
-
                 count++;
-                space_flag = 1;
+                real_len++;
+                check_space = 1;
             }
-        }
-        else
-        {
+        } else {
             *dst = *src;
             dst++;
             count++;
-            space_flag = 0;
+            real_len++;
+            check_space = 0;
         }
         src++;
     }
 
-    while (count < len)
-    {
+    while (count < len) {
         *dst = '.';
         dst++;
         count++;
     }
 
-    // return 0; // for now just so the code compiles.
-    return count;
+    return real_len;
 }
 
 void print_buff(char *buff, int len)
@@ -123,36 +115,31 @@ int reverse_str(char *buff, int len, int str_len)
     return 0;
 }
 
-int print_words(char *buff, int len, int str_len)
-{
+int print_words(char *buff, int len, int str_len) {
     char *start = buff;
     char *current = buff;
     int word_count = 0;
     int char_count = 0;
     printf("Word Print\n----------\n");
 
-    while (current < buff + str_len)
-    {
-        if (*current != ' ')
-        {
-            char_count++;
-        }
-        if ((*current == ' ' || current == buff + str_len - 1) && char_count > 0)
-        {
-            word_count++;
-
-            printf("%d", word_count);
-            char *word_ptr = start;
-            while (word_ptr < current)
-            {
-                putchar(*word_ptr);
-                word_ptr++;
+    while (current <= buff + str_len) {
+        if (current == buff + str_len || *current == ' ') {
+            if (char_count > 0) {
+                word_count++;
+                printf("%d. ", word_count);
+                
+                char *word_ptr = start;
+                while (word_ptr < current) {
+                    putchar(*word_ptr);
+                    word_ptr++;
+                }
+                
+                printf(" (%d)\n", char_count);
+                char_count = 0;
+                start = current + 1;
             }
-
-            printf(" (%d)\n", char_count);
-
-            start = current + 1;
-            char_count = 0;
+        } else {
+            char_count++;
         }
         current++;
     }
@@ -271,5 +258,5 @@ int main(int argc, char *argv[])
 //           the buff variable will have exactly 50 bytes?
 //
 //          this is good practice because it prevents buffer overflows,
-// and it makes the function reusable with different buffer sizes. also, 
+// and it makes the function reusable with different buffer sizes. also,
 // with bounds checking being explicit, this is a more secure way of doing things.
