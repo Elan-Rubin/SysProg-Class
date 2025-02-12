@@ -46,8 +46,7 @@
  *  See the provided test cases for output expectations.
  */
 
- void print_dragon_line(const char* encoded);
-
+void print_dragon_line(const char *encoded);
 
 int main()
 {
@@ -92,7 +91,8 @@ int main()
         "21e19f1e6f1e2f26e14f10e",
         "81e8f"};
 
-    char cmd_buff[SH_CMD_MAX];
+    char *cmd_buff = (char *)malloc(SH_CMD_MAX * sizeof(char));
+
     int rc = 0;
     command_list_t clist;
 
