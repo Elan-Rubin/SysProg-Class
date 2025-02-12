@@ -1,10 +1,3 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <ctype.h>
-
-#include "dshlib.h"
-
 /*
  *  build_cmd_list
  *    cmd_line:     the command line from the user
@@ -32,8 +25,104 @@
  *  Standard Library Functions You Might Want To Consider Using
  *      memset(), strcmp(), strcpy(), strtok(), strlen(), strchr()
  */
+
+
+ #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
+
+#include "dshlib.h"
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
+
+#include "dshlib.h"
+
+static char* trim(char* str)
+{
+    while (isspace(*str)) str++;
+    
+    if (*str == 0) return str;
+    
+    char* end = str + strlen(str) - 1;
+    while (end > str && isspace(*end)) end--;
+    end[1] = '\0';
+    
+    return str;
+}
+
 int build_cmd_list(char *cmd_line, command_list_t *clist)
 {
-    printf(M_NOT_IMPL);
-    return EXIT_NOT_IMPL;
+    memset(clist, 0, sizeof(command_list_t));
+    
+    char *copy = strdup(cmd_line);
+    if (!copy) return WARN_NO_CMDS;
+    
+    char *saveptr1;
+    char *cmd = strtok_r(copy, "|", &saveptr1);
+    
+    while (cmd != NULL)
+    {
+        if (clist->num >= CMD_MAX)
+        {
+            free(copy);
+            return ERR_TOO_MANY_COMMANDS;
+        }
+
+        cmd = trim(cmd);
+        
+        if (strlen(cmd) > 0)
+        {
+            char *cmd_copy = strdup(cmd);
+            if (!cmd_copy)
+            {
+                free(copy);
+                return WARN_NO_CMDS;
+            }
+
+            char *token = strtok(cmd_copy, " \t");
+            if (token)
+            {
+                if (strlen(token) >= EXE_MAX)
+                {
+                    free(cmd_copy);
+                    free(copy);
+                    return ERR_CMD_OR_ARGS_TOO_BIG;
+                }
+                
+                strcpy(clist->commands[clist->num].exe, token);
+                
+                token = strtok(NULL, "\0");
+                if (token)
+                {
+                    token = trim(token);
+                    if (strlen(token) >= ARG_MAX)
+                    {
+                        free(cmd_copy);
+                        free(copy);
+                        return ERR_CMD_OR_ARGS_TOO_BIG;
+                    }
+                    strcpy(clist->commands[clist->num].args, token);
+                }
+                
+                clist->num++;
+            }
+            
+            free(cmd_copy);
+        }
+        
+        cmd = strtok_r(NULL, "|", &saveptr1);
+    }
+    
+    free(copy);
+    
+    if (clist->num == 0)
+    {
+        return WARN_NO_CMDS;
+    }
+    
+    return OK;
 }
