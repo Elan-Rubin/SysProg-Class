@@ -1,71 +1,131 @@
+/*
+ *  build_cmd_list
+ *    cmd_line:     the command line from the user
+ *    clist *:      pointer to clist structure to be populated
+ *
+ *  This function builds the command_list_t structure passed by the caller
+ *  It does this by first splitting the cmd_line into commands by spltting
+ *  the string based on any pipe characters '|'.  It then traverses each
+ *  command.  For each command (a substring of cmd_line), it then parses
+ *  that command by taking the first token as the executable name, and
+ *  then the remaining tokens as the arguments.
+ *
+ *  NOTE your implementation should be able to handle properly removing
+ *  leading and trailing spaces!
+ *
+ *  errors returned:
+ *
+ *    OK:                      No Error
+ *    ERR_TOO_MANY_COMMANDS:   There is a limit of CMD_MAX (see dshlib.h)
+ *                             commands.
+ *    ERR_CMD_OR_ARGS_TOO_BIG: One of the commands provided by the user
+ *                             was larger than allowed, either the
+ *                             executable name, or the arg string.
+ *
+ *  Standard Library Functions You Might Want To Consider Using
+ *      memset(), strcmp(), strcpy(), strtok(), strlen(), strchr()
+ */
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
-#include <stdbool.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/wait.h>
+
 #include "dshlib.h"
 
-/*
- * Implement your exec_local_cmd_loop function by building a loop that prompts the 
- * user for input.  Use the SH_PROMPT constant from dshlib.h and then
- * use fgets to accept user input.
- * 
- *      while(1){
- *        printf("%s", SH_PROMPT);
- *        if (fgets(cmd_buff, ARG_MAX, stdin) == NULL){
- *           printf("\n");
- *           break;
- *        }
- *        //remove the trailing \n from cmd_buff
- *        cmd_buff[strcspn(cmd_buff,"\n")] = '\0';
- * 
- *        //IMPLEMENT THE REST OF THE REQUIREMENTS
- *      }
- * 
- *   Also, use the constants in the dshlib.h in this code.  
- *      SH_CMD_MAX              maximum buffer size for user input
- *      EXIT_CMD                constant that terminates the dsh program
- *      SH_PROMPT               the shell prompt
- *      OK                      the command was parsed properly
- *      WARN_NO_CMDS            the user command was empty
- *      ERR_TOO_MANY_COMMANDS   too many pipes used
- *      ERR_MEMORY              dynamic memory management failure
- * 
- *   errors returned
- *      OK                     No error
- *      ERR_MEMORY             Dynamic memory management failure
- *      WARN_NO_CMDS           No commands parsed
- *      ERR_TOO_MANY_COMMANDS  too many pipes used
- *   
- *   console messages
- *      CMD_WARN_NO_CMD        print on WARN_NO_CMDS
- *      CMD_ERR_PIPE_LIMIT     print on ERR_TOO_MANY_COMMANDS
- *      CMD_ERR_EXECUTE        print on execution failure of external command
- * 
- *  Standard Library Functions You Might Want To Consider Using (assignment 1+)
- *      malloc(), free(), strlen(), fgets(), strcspn(), printf()
- * 
- *  Standard Library Functions You Might Want To Consider Using (assignment 2+)
- *      fork(), execvp(), exit(), chdir()
- */
-int exec_local_cmd_loop()
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
+
+#include "dshlib.h"
+
+static char *trim(char *str)
 {
-    char *cmd_buff;
-    int rc = 0;
-    cmd_buff_t cmd;
+    while (isspace(*str))
+        str++;
 
-    // TODO IMPLEMENT MAIN LOOP
+    if (*str == 0)
+        return str;
 
-    // TODO IMPLEMENT parsing input to cmd_buff_t *cmd_buff
+    char *end = str + strlen(str) - 1;
+    while (end > str && isspace(*end))
+        end--;
+    end[1] = '\0';
 
-    // TODO IMPLEMENT if built-in command, execute builtin logic for exit, cd (extra credit: dragon)
-    // the cd command should chdir to the provided directory; if no directory is provided, do nothing
+    return str;
+}
 
-    // TODO IMPLEMENT if not built-in command, fork/exec as an external command
-    // for example, if the user input is "ls -l", you would fork/exec the command "ls" with the arg "-l"
+int build_cmd_list(char *cmd_line, command_list_t *clist)
+{
+    memset(clist, 0, sizeof(command_list_t));
+
+    char *copy = strdup(cmd_line);
+    if (!copy)
+        return WARN_NO_CMDS;
+
+    char *saveptr1;
+    char *cmd = strtok_r(copy, "|", &saveptr1);
+
+    while (cmd != NULL)
+    {
+        if (clist->num >= CMD_MAX)
+        {
+            free(copy);
+            return ERR_TOO_MANY_COMMANDS;
+        }
+
+        cmd = trim(cmd);
+
+        if (strlen(cmd) > 0)
+        {
+            char *cmd_copy = strdup(cmd);
+            if (!cmd_copy)
+            {
+                free(copy);
+                return WARN_NO_CMDS;
+            }
+
+            char *token = strtok(cmd_copy, " \t");
+            if (token)
+            {
+                if (strlen(token) >= EXE_MAX)
+                {
+                    free(cmd_copy);
+                    free(copy);
+                    return ERR_CMD_OR_ARGS_TOO_BIG;
+                }
+
+                strcpy(clist->commands[clist->num].exe, token);
+
+                token = strtok(NULL, "\0");
+                if (token)
+                {
+                    token = trim(token);
+                    if (strlen(token) >= ARG_MAX)
+                    {
+                        free(cmd_copy);
+                        free(copy);
+                        return ERR_CMD_OR_ARGS_TOO_BIG;
+                    }
+                    strcpy(clist->commands[clist->num].args, token);
+                }
+
+                clist->num++;
+            }
+
+            free(cmd_copy);
+        }
+
+        cmd = strtok_r(NULL, "|", &saveptr1);
+    }
+
+    free(copy);
+
+    if (clist->num == 0)
+    {
+        return WARN_NO_CMDS;
+    }
 
     return OK;
 }

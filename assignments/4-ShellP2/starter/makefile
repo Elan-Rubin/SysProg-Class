@@ -21,7 +21,7 @@ clean:
 	rm -f $(TARGET)
 
 test:
-	bats $(wildcard ./bats/*.sh)
+	./test.sh
 
 # Phony targets
-.PHONY: all clean test
+.PHONY: all clean
