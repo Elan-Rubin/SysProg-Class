@@ -5,23 +5,29 @@ CFLAGS = -Wall -Wextra -g
 # Target executable name
 TARGET = dsh
 
-# Find all source and header files
-SRCS = $(wildcard *.c)
-HDRS = $(wildcard *.h)
+# Source files
+SRCS = dsh_cli.c dshlib.c
+OBJS = $(SRCS:.c=.o)
 
 # Default target
-all: $(TARGET)
+all: clean $(TARGET)
 
-# Compile source to executable
-$(TARGET): $(SRCS) $(HDRS)
-	$(CC) $(CFLAGS) -o $(TARGET) $(SRCS)
+# Link object files to create executable
+$(TARGET): $(OBJS)
+	$(CC) $(OBJS) -o $(TARGET)
+
+# Compile source files to object files
+%.o: %.c dshlib.h
+	$(CC) $(CFLAGS) -c $< -o $@
 
 # Clean up build files
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) *.o
 
-test:
+test: $(TARGET)
+	chmod +x test.sh
+	chmod +x bats/*.sh
 	./test.sh
 
 # Phony targets
-.PHONY: all clean
+.PHONY: all clean test

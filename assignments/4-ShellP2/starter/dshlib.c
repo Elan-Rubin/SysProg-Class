@@ -13,83 +13,92 @@
 
 #include "dshlib.h"
 
+static int last_return_code = 0;
+
 int build_cmd_list(char *cmd_line, command_list_t *clist) {
-    (void)cmd_line;
-    (void)clist;
-    return WARN_NO_CMDS;
-}
-
-int handle_cd_command(cmd_buff_t *cmd) {
-    if (cmd->argc <= 1) {
-        return 0;
-    }
-
-    if (chdir(cmd->argv[1]) != 0) {
-        perror("cd");
-        return -1;
-    }
-
-    return 0;
-}
-
-int parse_command(char *input, cmd_buff_t *cmd) {
-    memset(cmd, 0, sizeof(cmd_buff_t));
-    cmd->_cmd_buffer = strdup(input);
-    if (!cmd->_cmd_buffer) {
-        return -1;
-    }
-
-    char *trimmed = cmd->_cmd_buffer;
-    while (isspace(*trimmed)) trimmed++;
+    if (!cmd_line || !clist) return WARN_NO_CMDS;
     
-    if (*trimmed == '\0') {
-        free(cmd->_cmd_buffer);
-        cmd->_cmd_buffer = NULL;
-        return WARN_NO_CMDS;
-    }
-
-    char *end = trimmed + strlen(trimmed) - 1;
-    while (end > trimmed && isspace(*end)) end--;
-    *(end + 1) = '\0';
-
-    // Parse the command line
-    cmd->argc = 0;
-    char *token = strtok(trimmed, " ");
-    while (token != NULL && cmd->argc < CMD_ARGV_MAX - 1) {
-        cmd->argv[cmd->argc++] = token;
-        token = strtok(NULL, " ");
-    }
-    cmd->argv[cmd->argc] = NULL;
-
-    return OK;
-}
-
-int execute_external_command(cmd_buff_t *cmd) {
-    pid_t pid = fork();
+    memset(clist, 0, sizeof(command_list_t));
     
-    if (pid < 0) {
-        fprintf(stderr, CMD_ERR_EXECUTE);
-        return errno;
+    // Skip leading spaces
+    while (isspace(*cmd_line)) cmd_line++;
+    
+    // Check for empty input
+    if (!*cmd_line) return WARN_NO_CMDS;
+    
+    // Process input
+    char *temp = strdup(cmd_line);
+    if (!temp) return -1;
+    
+    char *curr = temp;
+    char *start = curr;
+    int in_quotes = 0;
+    
+    while (*curr) {
+        if (*curr == '|' && !in_quotes) {
+            *curr = '\0';
+            if (clist->num >= CMD_MAX) {
+                free(temp);
+                return ERR_TOO_MANY_COMMANDS;
+            }
+            
+            char *cmd_start = start;
+            while (isspace(*cmd_start)) cmd_start++;
+            
+            char *space = strchr(cmd_start, ' ');
+            if (space) {
+                *space = '\0';
+                strcpy(clist->commands[clist->num].exe, cmd_start);
+                strcpy(clist->commands[clist->num].args, space + 1);
+                char *args = clist->commands[clist->num].args;
+                while (isspace(*args)) args++;
+                memmove(clist->commands[clist->num].args, args, strlen(args) + 1);
+            } else {
+                strcpy(clist->commands[clist->num].exe, cmd_start);
+            }
+            clist->num++;
+            start = curr + 1;
+        } else if (*curr == '"') {
+            in_quotes = !in_quotes;
+        }
+        curr++;
     }
     
-    if (pid == 0) {
-        execvp(cmd->argv[0], cmd->argv);
-        fprintf(stderr, CMD_ERR_EXECUTE);
-        exit(errno);
-    } else {
-        int status;
-        waitpid(pid, &status, 0);
-        return WEXITSTATUS(status);
+    // Handle last command
+    if (*start) {
+        if (clist->num >= CMD_MAX) {
+            free(temp);
+            return ERR_TOO_MANY_COMMANDS;
+        }
+        
+        char *cmd_start = start;
+        while (isspace(*cmd_start)) cmd_start++;
+        
+        char *space = strchr(cmd_start, ' ');
+        if (space) {
+            *space = '\0';
+            strcpy(clist->commands[clist->num].exe, cmd_start);
+            strcpy(clist->commands[clist->num].args, space + 1);
+            char *args = clist->commands[clist->num].args;
+            while (isspace(*args)) args++;
+            memmove(clist->commands[clist->num].args, args, strlen(args) + 1);
+        } else {
+            strcpy(clist->commands[clist->num].exe, cmd_start);
+        }
+        clist->num++;
     }
+    
+    free(temp);
+    return clist->num > 0 ? OK : WARN_NO_CMDS;
 }
 
 int exec_local_cmd_loop(void) {
     char input_buffer[ARG_MAX];
-    cmd_buff_t cmd;
-    int last_return_code = 0;
-
+    command_list_t clist;
+    int rc;
+    
     while (1) {
-        printf(SH_PROMPT);
+        printf("%s", SH_PROMPT);
         fflush(stdout);
         
         if (fgets(input_buffer, ARG_MAX, stdin) == NULL) {
@@ -108,23 +117,21 @@ int exec_local_cmd_loop(void) {
             exit(0);
         }
 
-        int parse_result = parse_command(input_buffer, &cmd);
-        
-        if (parse_result == WARN_NO_CMDS || cmd.argc == 0) {
-            continue;
-        }
+        rc = build_cmd_list(input_buffer, &clist);
 
-        if (strcmp(cmd.argv[0], "cd") == 0) {
-            last_return_code = handle_cd_command(&cmd);
-        } else if (strcmp(cmd.argv[0], "rc") == 0) {
-            printf("%d\n", last_return_code);
-        } else {
-            last_return_code = execute_external_command(&cmd);
-        }
-
-        if (cmd._cmd_buffer) {
-            free(cmd._cmd_buffer);
-            cmd._cmd_buffer = NULL;
+        if (rc == WARN_NO_CMDS) {
+            printf(CMD_WARN_NO_CMD);
+        } else if (rc == ERR_TOO_MANY_COMMANDS) {
+            printf(CMD_ERR_PIPE_LIMIT, CMD_MAX);
+        } else if (rc == OK) {
+            printf(CMD_OK_HEADER, clist.num);
+            for (int i = 0; i < clist.num; i++) {
+                printf("<%d>%s", i + 1, clist.commands[i].exe);
+                if (strlen(clist.commands[i].args) > 0) {
+                    printf("[%s]", clist.commands[i].args);
+                }
+                printf("\n");
+            }
         }
     }
 
