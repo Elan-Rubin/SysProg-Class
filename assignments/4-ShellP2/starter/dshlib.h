@@ -29,17 +29,13 @@ typedef struct cmd_buff {
 #define PIPE_CHAR '|'
 #define PIPE_STRING "|"
 
-#define SH_PROMPT "dsh> "
+#define SH_PROMPT "dsh2> "
 #define EXIT_CMD "exit"
 
 #define OK 0
 #define WARN_NO_CMDS -1
 #define ERR_TOO_MANY_COMMANDS -2
 #define ERR_CMD_OR_ARGS_TOO_BIG -3
-
-#define M_NOT_IMPL "The requested operation is not implemented yet!\n"
-#define EXIT_NOT_IMPL 3
-#define NOT_IMPLEMENTED_YET 0
 
 #define CMD_OK_HEADER "PARSED COMMAND LINE - TOTAL COMMANDS %d\n"
 #define CMD_WARN_NO_CMD "warning: no commands provided\n"
