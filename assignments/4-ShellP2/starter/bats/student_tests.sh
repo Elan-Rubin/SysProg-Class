@@ -4,6 +4,14 @@
 # 
 # Create your unit tests suit in this file
 
+@test "00_mixed_quoted_and_unquoted_arguments" {
+    run ./dsh <<EOF
+echo Test "Multi Word Argument" unquoted
+EOF
+    [[ "$output" == *"Test Multi Word Argument unquoted"* ]]
+    [ "$status" -eq 0 ]
+}
+
 @test "01_check_ls_runs_without_errors" {
     run ./dsh <<EOF                
 ls
