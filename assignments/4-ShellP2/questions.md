@@ -1,6 +1,6 @@
 1. Can you think of why we use `fork/execvp` instead of just calling `execvp` directly? What value do you think the `fork` provides?
 
-    > **Answer**:  _start here_
+    > **Answer**:  the value of the fork function is that it creates a whole new child process. it's important that we still preserve the parent process. the execvp replaces the current process with the new one, so without fork we'd lose the shell process
 
 2. What happens if the fork() system call fails? How does your implementation handle this scenario?
 

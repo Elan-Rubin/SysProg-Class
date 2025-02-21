@@ -5,29 +5,27 @@ CFLAGS = -Wall -Wextra -g
 # Target executable name
 TARGET = dsh
 
-# Source files
-SRCS = dsh_cli.c dshlib.c
-OBJS = $(SRCS:.c=.o)
+# Find all source and header files
+SRCS = $(wildcard *.c)
+HDRS = $(wildcard *.h)
 
 # Default target
-all: clean $(TARGET)
+all: $(TARGET)
 
-# Link object files to create executable
-$(TARGET): $(OBJS)
-	$(CC) $(OBJS) -o $(TARGET)
-
-# Compile source files to object files
-%.o: %.c dshlib.h
-	$(CC) $(CFLAGS) -c $< -o $@
+# Compile source to executable
+$(TARGET): $(SRCS) $(HDRS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(SRCS)
 
 # Clean up build files
 clean:
-	rm -f $(TARGET) *.o
+	rm -f $(TARGET)
 
-test: $(TARGET)
-	chmod +x test.sh
-	chmod +x bats/*.sh
-	./test.sh
+test:
+	bats $(wildcard ./bats/*.sh)
+
+valgrind:
+	echo "pwd\nexit" | valgrind --leak-check=full --show-leak-kinds=all --error-exitcode=1 ./$(TARGET) 
+	echo "pwd\nexit" | valgrind --tool=helgrind --error-exitcode=1 ./$(TARGET) 
 
 # Phony targets
 .PHONY: all clean test
