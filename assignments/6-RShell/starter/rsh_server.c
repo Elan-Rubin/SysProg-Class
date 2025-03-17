@@ -340,14 +340,26 @@ int exec_client_requests(int cli_socket) {
             }
         }
         
-        if (!is_complete) {
-            printf("Error: Command too long or missing null terminator\n");
+        printf("Error: Command too long or missing null terminator\n");
             send_message_string(cli_socket, "Error: Command too long or missing null terminator\n");
+            send_message_eof(cli_socket);  // Ensure EOF is sent
             continue;
         }
         
         // Log the command we're about to execute
         printf(RCMD_MSG_SVR_EXEC_REQ, io_buff);
+        
+        // Trim trailing whitespace
+        int end = total_recv - 1;
+        while (end > 0 && isspace(io_buff[end-1])) {
+            io_buff[--end] = '\0';
+        }
+        
+        // Check for empty command
+        if (strlen(io_buff) == 0) {
+            send_message_eof(cli_socket);  // Just send EOF for empty command
+            continue;
+        }
         
         // Check for simple built-in commands before full parsing
         if (strcmp(io_buff, "exit") == 0) {
@@ -363,7 +375,7 @@ int exec_client_requests(int cli_socket) {
             return OK_EXIT;
         }
         
-        // Check for other built-in commands
+        // Check for built-in commands that need special handling
         cmd_buff_t temp_cmd;
         if (alloc_cmd_buff(&temp_cmd) != OK) {
             send_message_string(cli_socket, "Error: Failed to allocate memory for command\n");
@@ -390,8 +402,59 @@ int exec_client_requests(int cli_socket) {
             close(cli_socket);
             return OK;
         } else if (bi_cmd_type == BI_EXECUTED) {
-            // Built-in command was executed directly
-            send_message_string(cli_socket, "Command executed.\n");
+            // Special handling for built-in commands that need to output to the client
+            if (strcmp(temp_cmd.argv[0], "cd") == 0) {
+                if (temp_cmd.argc < 2) {
+                    send_message_string(cli_socket, "cd: missing argument\n");
+                } else if (chdir(temp_cmd.argv[1]) != 0) {
+                    char error_msg[256];
+                    snprintf(error_msg, sizeof(error_msg), "cd: %s: %s\n", 
+                             temp_cmd.argv[1], strerror(errno));
+                    send_message_string(cli_socket, error_msg);
+                } else {
+                    // Send EOF to complete the command
+                    send_message_eof(cli_socket);
+                }
+            } else if (strcmp(temp_cmd.argv[0], "dragon") == 0) {
+                // For dragon, we need to capture its output
+                int pipefd[2];
+                if (pipe(pipefd) == -1) {
+                    perror("pipe");
+                    send_message_string(cli_socket, "Error creating pipe for dragon command\n");
+                    free_cmd_buff(&temp_cmd);
+                    continue;
+                }
+                
+                // Redirect stdout to pipe temporarily
+                int saved_stdout = dup(STDOUT_FILENO);
+                dup2(pipefd[1], STDOUT_FILENO);
+                
+                // Execute dragon function
+                print_dragon();
+                fflush(stdout);
+                
+                // Restore stdout
+                dup2(saved_stdout, STDOUT_FILENO);
+                close(saved_stdout);
+                close(pipefd[1]);  // Close write end of pipe
+                
+                // Read from pipe and send to client
+                char dragon_output[4096];
+                ssize_t bytes_read = read(pipefd[0], dragon_output, sizeof(dragon_output) - 1);
+                close(pipefd[0]);  // Close read end of pipe
+                
+                if (bytes_read > 0) {
+                    dragon_output[bytes_read] = '\0';
+                    send(cli_socket, dragon_output, bytes_read, 0);
+                }
+                
+                // Send EOF
+                send_message_eof(cli_socket);
+            } else {
+                // Other built-ins - just send EOF
+                send_message_eof(cli_socket);
+            }
+            
             free_cmd_buff(&temp_cmd);
             continue;
         }
@@ -406,12 +469,12 @@ int exec_client_requests(int cli_socket) {
             continue;
         } else if (rc == ERR_TOO_MANY_COMMANDS) {
             char error_msg[100];
-            sprintf(error_msg, CMD_ERR_PIPE_LIMIT, CMD_MAX);
+            snprintf(error_msg, sizeof(error_msg), CMD_ERR_PIPE_LIMIT, CMD_MAX);
             send_message_string(cli_socket, error_msg);
             continue;
         } else if (rc != OK) {
             char error_msg[100];
-            sprintf(error_msg, CMD_ERR_RDSH_ITRNL, rc);
+            snprintf(error_msg, sizeof(error_msg), CMD_ERR_RDSH_ITRNL, rc);
             send_message_string(cli_socket, error_msg);
             continue;
         }
@@ -419,6 +482,19 @@ int exec_client_requests(int cli_socket) {
         // Execute the command pipeline
         cmd_rc = rsh_execute_pipeline(cli_socket, &cmd_list);
         printf(RCMD_MSG_SVR_RC_CMD, cmd_rc);
+        
+        // Handle special return codes
+        if (cmd_rc == EXIT_SC) {
+            free_cmd_list(&cmd_list);
+            free(io_buff);
+            close(cli_socket);
+            return OK;
+        } else if (cmd_rc == STOP_SERVER_SC) {
+            free_cmd_list(&cmd_list);
+            free(io_buff);
+            close(cli_socket);
+            return OK_EXIT;
+        }
         
         // Send EOF to indicate end of command output
         send_message_eof(cli_socket);
@@ -436,13 +512,16 @@ int exec_client_requests(int cli_socket) {
  * send_message_eof(cli_socket)
  */
 int send_message_eof(int cli_socket) {
-    int send_len = (int)sizeof(RDSH_EOF_CHAR);
-    int sent_len;
-    sent_len = send(cli_socket, &RDSH_EOF_CHAR, send_len, 0);
-
-    if (sent_len != send_len) {
+    int bytes_sent;
+    
+    // Send one character, the EOF character
+    bytes_sent = send(cli_socket, &RDSH_EOF_CHAR, 1, 0);
+    
+    if (bytes_sent != 1) {
+        perror("send EOF");
         return ERR_RDSH_COMMUNICATION;
     }
+    
     return OK;
 }
 
@@ -492,12 +571,16 @@ Built_In_Cmds rsh_match_command(const char *input) {
  */
 Built_In_Cmds rsh_built_in_cmd(cmd_buff_t *cmd) {
     Built_In_Cmds ctype = BI_NOT_BI;
+    
+    if (cmd == NULL || cmd->argc == 0 || cmd->argv[0] == NULL) {
+        return BI_NOT_BI;
+    }
+    
     ctype = rsh_match_command(cmd->argv[0]);
 
     switch (ctype) {
     case BI_CMD_DRAGON:
-        // Uncomment if you have print_dragon function
-        // print_dragon();
+        // Don't actually print_dragon here, we'll handle it in exec_client_requests
         return BI_EXECUTED;
     case BI_CMD_EXIT:
         // Check if this is actually the stop-server command
@@ -506,7 +589,7 @@ Built_In_Cmds rsh_built_in_cmd(cmd_buff_t *cmd) {
         }
         return BI_CMD_EXIT;
     case BI_CMD_CD:
-        chdir(cmd->argv[1]);
+        // Don't change directory here, we'll handle it in exec_client_requests
         return BI_EXECUTED;
     default:
         return BI_NOT_BI;
@@ -521,7 +604,7 @@ int rsh_execute_pipeline(int cli_sock, command_list_t *clist) {
     pid_t pids[CMD_MAX];
     int pids_st[CMD_MAX];       // Array to store process status
     Built_In_Cmds bi_cmd;
-    int exit_code;
+    int exit_code = 0;
 
     // If no commands, return
     if (clist->num == 0) {
@@ -580,24 +663,20 @@ int rsh_execute_pipeline(int cli_sock, command_list_t *clist) {
         } else if (pids[i] == 0) {
             // Child process
             
-            // Set up stdin
-            if (i == 0) {
-                // First command: stdin comes from the socket
-                dup2(cli_sock, STDIN_FILENO);
-            } else {
-                // Not first command: stdin comes from previous pipe
+            // Set up stdin from previous pipe or keep original stdin
+            if (i > 0) {
                 dup2(pipes[i-1][0], STDIN_FILENO);
             }
             
-            // Set up stdout
+            // Set up stdout to next pipe or to the socket for last command
             if (i < clist->num - 1) {
-                // Not last command: stdout goes to next pipe
                 dup2(pipes[i][1], STDOUT_FILENO);
             } else {
-                // Last command: stdout goes to the socket
                 dup2(cli_sock, STDOUT_FILENO);
-                dup2(cli_sock, STDERR_FILENO);
             }
+            
+            // Always redirect stderr to socket
+            dup2(cli_sock, STDERR_FILENO);
             
             // Close all pipe file descriptors in the child
             for (int j = 0; j < clist->num - 1; j++) {
@@ -608,8 +687,12 @@ int rsh_execute_pipeline(int cli_sock, command_list_t *clist) {
             // Execute the command
             execvp(clist->commands[i].argv[0], clist->commands[i].argv);
             
-            // If execvp fails
-            perror("execvp");
+            // If execvp fails, send error message directly to the socket
+            char error_msg[256];
+            snprintf(error_msg, sizeof(error_msg), "Error: '%s': %s\n", 
+                     clist->commands[i].argv[0], strerror(errno));
+            write(STDERR_FILENO, error_msg, strlen(error_msg));
+            
             exit(EXIT_FAILURE);
         }
     }
@@ -624,18 +707,14 @@ int rsh_execute_pipeline(int cli_sock, command_list_t *clist) {
     for (int i = 0; i < clist->num; i++) {
         if (pids[i] > 0) {
             waitpid(pids[i], &pids_st[i], 0);
-        }
-    }
-
-    // Get exit code of last command
-    exit_code = WEXITSTATUS(pids_st[clist->num - 1]);
-    
-    // Check for special exit codes
-    for (int i = 0; i < clist->num; i++) {
-        if (pids[i] > 0 && WEXITSTATUS(pids_st[i]) == EXIT_SC) {
-            exit_code = EXIT_SC;
+            
+            // If this is the last command, use its exit status
+            if (i == clist->num - 1) {
+                exit_code = WEXITSTATUS(pids_st[i]);
+            }
         }
     }
     
     return exit_code;
 }
+                
