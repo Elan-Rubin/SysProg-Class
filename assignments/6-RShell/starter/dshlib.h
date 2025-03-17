@@ -71,6 +71,8 @@ typedef enum {
     BI_CMD_EXIT,
     BI_CMD_DRAGON,
     BI_CMD_CD,
+    BI_CMD_STOP_SVR,
+    BI_CMD_RC,
     BI_NOT_BI,
     BI_EXECUTED,
 } Built_In_Cmds;
